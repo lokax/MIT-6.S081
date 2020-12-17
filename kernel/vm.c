@@ -4,6 +4,8 @@
 #include "elf.h"
 #include "riscv.h"
 #include "defs.h"
+#include "spinlock.h"
+#include "proc.h"
 #include "fs.h"
 
 /*
@@ -45,6 +47,7 @@ kvminit()
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  //vmprint(kernel_pagetable);
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -132,7 +135,7 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  pte = walk(myproc()->kpagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -379,23 +382,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  uint64 n, va0, pa0;
-
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > len)
-      n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+  // part 3
+    return copyin_new(pagetable, dst, srcva, len);
+  // *******************
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -405,38 +394,74 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  uint64 n, va0, pa0;
-  int got_null = 0;
+  return copyinstr_new(pagetable, dst, srcva, max);
+}
 
-  while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > max)
-      n = max;
-
-    char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
-        *dst = '\0';
-        got_null = 1;
+void vmprint_helper(pagetable_t pagetable, int level) {
+  for(int i = 0; i < 512; ++i) {
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V) {
+      uint64 pa = PTE2PA(pte);
+      switch (level)
+      {
+      case 2:
+        printf("..%d: pte %p pa %p\n", i, pte, pa);
+        vmprint_helper((pagetable_t)pa, 1);
         break;
-      } else {
-        *dst = *p;
+      case 1:
+        printf(".. ..%d: pte %p pa %p\n", i, pte, pa);
+        vmprint_helper((pagetable_t)pa, 0);
+      default:
+        printf(".. .. ..%d: pte %p pa %p\n", i, pte, pa);
+        break;
       }
-      --n;
-      --max;
-      p++;
-      dst++;
+    }
+  }
+}
+
+void vmprint(pagetable_t pagetable) {
+  printf("page table %p\n",pagetable);
+  vmprint_helper(pagetable, 2);
+}
+
+void uvmmap(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm) {
+  if(mappages(pagetable, va, sz, pa, perm) != 0)
+    panic("uvmmap");
+}
+pagetable_t creat_proc_kpagetable() {
+  pagetable_t proc_kpgtbl = uvmcreate();
+  if(proc_kpgtbl == 0) {
+    panic("creat_proc_kpgtbl");
+    return 0;
+  }
+  uvmmap(proc_kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  uvmmap(proc_kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  uvmmap(proc_kpgtbl, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  uvmmap(proc_kpgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  uvmmap(proc_kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  uvmmap(proc_kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  uvmmap(proc_kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  return proc_kpgtbl;
+}
+// part 3
+void kvmaddmapping(pagetable_t kpagetable, pagetable_t pagetable, uint64 oldsz, uint64 newsz) {
+  pte_t *from, *to;
+  uint64 pa;
+  if(newsz < oldsz) return;
+  uint64 start = PGROUNDUP(oldsz);
+  for( ; start < newsz; start += PGSIZE) {
+    if((from = walk(pagetable, start, 0)) == 0) {
+      panic("kvmaddmapping walk pagetabel fail");
     }
 
-    srcva = va0 + PGSIZE;
+    if((to = walk(kpagetable, start, 1)) == 0) {
+      panic("kvmaddmapping walk kpagetable fail");
+    }
+    
+    pa = PTE2PA(*from);
+    // clear u falg
+    uint64 pte_flag = PTE_FLAGS(*from) & (~PTE_U);
+    *to = PA2PTE(pa) | pte_flag;
   }
-  if(got_null){
-    return 0;
-  } else {
-    return -1;
-  }
+
 }
