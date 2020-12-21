@@ -95,6 +95,11 @@ struct proc {
   int pid;                     // Process ID
 
   // these are private to the process, so p->lock need not be held.
+  void (*handler)();           // handler function pointer
+  int alarmInterval;           // alarm interval
+  int total_ticks;             // passed ticks
+  int waiting_alarm;
+ 
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)
   pagetable_t pagetable;       // User page table
@@ -103,4 +108,41 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+   /*   0 */ //uint64 kernel_satp;   // kernel page table
+  /*   8 */ //uint64 kernel_sp;     // top of process's kernel stack
+  /*  16 */ //uint64 kernel_trap;   // usertrap()
+  /*  24 */ uint64 saved_epc;           // saved user program counter
+  /*  32 */ //uint64 kernel_hartid; // saved kernel tp
+  /*  40 */ uint64 saved_ra;
+  /*  48 */ uint64 saved_sp;
+  /*  56 */ uint64 saved_gp;
+  /*  64 */ uint64 saved_tp;
+  /*  72 */ uint64 saved_t0;
+  /*  80 */ uint64 saved_t1;
+  /*  88 */ uint64 saved_t2;
+  /*  96 */ uint64 saved_s0;
+  /* 104 */ uint64 saved_s1;
+  /* 112 */ uint64 saved_a0;
+  /* 120 */ uint64 saved_a1;
+  /* 128 */ uint64 saved_a2;
+  /* 136 */ uint64 saved_a3;
+  /* 144 */ uint64 saved_a4;
+  /* 152 */ uint64 saved_a5;
+  /* 160 */ uint64 saved_a6;
+  /* 168 */ uint64 saved_a7;
+  /* 176 */ uint64 saved_s2;
+  /* 184 */ uint64 saved_s3;
+  /* 192 */ uint64 saved_s4;
+  /* 200 */ uint64 saved_s5;
+  /* 208 */ uint64 saved_s6;
+  /* 216 */ uint64 saved_s7;
+  /* 224 */ uint64 saved_s8;
+  /* 232 */ uint64 saved_s9;
+  /* 240 */ uint64 saved_s10;
+  /* 248 */ uint64 saved_s11;
+  /* 256 */ uint64 saved_t3;
+  /* 264 */ uint64 saved_t4;
+  /* 272 */ uint64 saved_t5;
+  /* 280 */ uint64 saved_t6;
+  
 };
