@@ -69,19 +69,21 @@ usertrap(void)
     // ok
   } else if(r_scause() == 15 || r_scause() == 13) { // my code
     uint64 va = r_stval();
-    printf("page falut %p\n", va);
-    printf("sepc: %p\n", r_sepc());
-		if(va <= p->sz && va > PGROUNDUP(p->trapframe->sp)) {
-      uint64 pa = (uint64)kalloc();
-      if(pa == 0) {
+   //  printf("page falut %p\n", va);
+   //  printf("sepc: %p\n", r_sepc());
+		if(va < p->sz && PGROUNDDOWN(va) > p->trapframe->sp) {
+      uint64 ka = (uint64)kalloc();
+      if(ka == 0) {
         p->killed = 1;
-      }
-      memset((void*)pa, 0, PGSIZE);
-      if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, pa, PTE_W | PTE_R | PTE_U)){
-        kfree((void*)pa);
-        p->killed = 1;
-      }
-      printf("succeful\n");
+      } else {
+				
+      	memset((void*)ka, 0, PGSIZE);
+      	if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, ka, PTE_W | PTE_R | PTE_U)){
+       	 kfree((void*)ka);
+       	 p->killed = 1;
+      	}
+			}
+     //  printf("succeful\n");
     } else {
 			p->killed = 1;
 		}
