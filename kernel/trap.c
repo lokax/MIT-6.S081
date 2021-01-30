@@ -71,9 +71,7 @@ usertrap(void)
     uint64 va = r_stval();
     printf("page falut %p\n", va);
     printf("sepc: %p\n", r_sepc());
-    if(va > p->sz) {
-      p->killed = -1;
-    } else {
+		if(va <= p->sz && va > PGROUNDUP(p->trapframe->sp)) {
       uint64 pa = (uint64)kalloc();
       if(pa == 0) {
         p->killed = 1;
@@ -84,7 +82,10 @@ usertrap(void)
         p->killed = 1;
       }
       printf("succeful\n");
-    }
+    } else {
+			p->killed = 1;
+		}
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

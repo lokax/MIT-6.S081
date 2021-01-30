@@ -5,7 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "spinlock.h"
+#include "proc.h"
 /*
  * the kernel's page table.
  */
@@ -101,10 +102,23 @@ walkaddr(pagetable_t pagetable, uint64 va)
     return 0;
 
   pte = walk(pagetable, va, 0);
-  if(pte == 0)
-    return 0;
-  if((*pte & PTE_V) == 0)
-    return 0;
+  if(pte == 0 || (*pte & PTE_V) == 0) {
+		if(va <= myproc()->sz && (va > PGROUNDUP(myproc()->trapframe->sp)))	 {
+			uint64 ka = (uint64)kalloc();
+			if(ka == 0) {
+				myproc()->killed = 1;
+			}
+			memset((void*)ka, 0, PGSIZE);
+			if(mappages(myproc()->pagetable, PGROUNDDOWN(va), PGSIZE, ka, PTE_W | PTE_R | PTE_X | PTE_X) != 0) {
+				kfree((void*)ka);
+				myproc()->killed = 1;
+			}
+			return ka;
+		} else {
+			myproc()->killed = 1;
+		}
+	//	return ka;
+	}
   if((*pte & PTE_U) == 0)
     return 0;
   pa = PTE2PA(*pte);
@@ -181,8 +195,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
+      // panic("uvmunmap: walk");
+    	continue;
+		if((*pte & PTE_V) == 0)
       // panic("uvmunmap: not mapped");
       //  my code
       continue;
