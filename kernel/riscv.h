@@ -1,3 +1,5 @@
+#define MY_CODE 1
+
 // which hart (core) is this?
 static inline uint64
 r_mhartid()
@@ -332,6 +334,9 @@ sfence_vma()
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // 1 -> user can access
 
+#if MY_CODE
+  #define PTE_C (1L << 8) // for cow
+#endif
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 

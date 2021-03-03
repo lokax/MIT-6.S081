@@ -29,6 +29,36 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+int handlerFault(pagetable_t pagetable, uint64 va) {
+  // 防止用户传递一个大地址
+  // printf("handler fault\n");
+  if(va >= MAXVA) {
+    return -1;
+  }
+  pte_t *pte = walk(pagetable, va, 0);
+  // 检查地址是否合法
+  if(*pte == 0) {
+    return -1;
+  }
+  // printf("pte %d\n", *pte);
+  if((*pte & PTE_U) == 0 || (*pte & PTE_V) == 0) {
+    return -1;
+  }
+ 
+  uint64 pa1 = PTE2PA(*pte);
+  uint64 pa2 = (uint64)kalloc();
+    if(pa2 == 0) {
+      printf("cowhandler kalloc fail\n");
+      return -1;
+    }
+    // 拷贝相同数据到npa中
+  memmove((void*)pa2, (void*)pa1, 4096);
+  *pte = PA2PTE(pa2) | PTE_V | PTE_U | PTE_R | PTE_W | PTE_X;
+    //scause = 12 是 x没设置。
+  return 0;
+
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -65,9 +95,20 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+   } else if ((which_dev = devintr()) != 0) {
+	   //ok
+	   
+   }else if(r_scause() == 0xf) {
+     printf("trap begin\n");
+     if(handlerFault(p->pagetable, r_stval()) < 0) {
+       p->killed = 1;
+     } 
+     printf("trap here\n");
+   } 
+  // else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+ // }
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
