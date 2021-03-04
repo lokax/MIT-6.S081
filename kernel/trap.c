@@ -47,14 +47,15 @@ int handlerFault(pagetable_t pagetable, uint64 va) {
  
   uint64 pa1 = PTE2PA(*pte);
   uint64 pa2 = (uint64)kalloc();
-    if(pa2 == 0) {
-      printf("cowhandler kalloc fail\n");
-      return -1;
-    }
+  if(pa2 == 0) {
+    printf("cowhandler kalloc fail\n");
+    return -1;
+  }
     // 拷贝相同数据到npa中
   memmove((void*)pa2, (void*)pa1, 4096);
+  kfree((void*)pa1);
   *pte = PA2PTE(pa2) | PTE_V | PTE_U | PTE_R | PTE_W | PTE_X;
-    //scause = 12 是 x没设置。
+  //scause = 12 是 x没设置。
   return 0;
 
 }
@@ -98,12 +99,10 @@ usertrap(void)
    } else if ((which_dev = devintr()) != 0) {
 	   //ok
 	   
-   }else if(r_scause() == 0xf) {
-     printf("trap begin\n");
+   } else if(r_scause() == 0xf) {
      if(handlerFault(p->pagetable, r_stval()) < 0) {
        p->killed = 1;
      } 
-     printf("trap here\n");
    } 
   // else if((which_dev = devintr()) != 0){
     // ok

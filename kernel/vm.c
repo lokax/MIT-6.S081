@@ -15,6 +15,8 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+
+
 /*
  * create a direct-map page table for the kernel.
  */
@@ -324,12 +326,13 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     //  goto err;
     // memmove(mem, (char*)pa, PGSIZE);
     *pte &= ~(PTE_W);
-    // *pte |= PTE_C;
     flags = PTE_FLAGS(*pte);
+    increRef(pa);  // my code
     if(mappages(new, i, PGSIZE, pa, flags) != 0){
-      // kfree(mem);
+      kfree((void*)pa);
       goto err;
     }
+    
   }
   return 0;
 

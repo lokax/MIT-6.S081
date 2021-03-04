@@ -143,8 +143,10 @@ filetest()
     }
     if(pid == 0){
       sleep(1);
-      if(read(fds[0], buf, sizeof(i)) != sizeof(i)){
-        printf("error: read failed\n");
+      int readSize = read(fds[0], buf, sizeof(i));
+      
+      if(readSize != sizeof(i)){
+        printf("error: read failed %d\n", readSize);
         exit(1);
       }
       sleep(1);
