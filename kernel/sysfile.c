@@ -26,8 +26,10 @@ argfd(int n, int *pfd, struct file **pf)
 
   if(argint(n, &fd) < 0)
     return -1;
-  if(fd < 0 || fd >= NOFILE || (f=myproc()->ofile[fd]) == 0)
+  if(fd < 0 || fd >= NOFILE || (f=myproc()->ofile[fd]) == 0) {
     return -1;
+  }
+    
   if(pfd)
     *pfd = fd;
   if(pf)
@@ -46,6 +48,7 @@ fdalloc(struct file *f)
   for(fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd] == 0){
       p->ofile[fd] = f;
+     // printf("fdalloc fd %d\n", fd);
       return fd;
     }
   }
@@ -73,9 +76,13 @@ sys_read(void)
   int n;
   uint64 p;
 
-  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
+  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0) {
     return -1;
-  return fileread(f, p, n);
+  }
+    
+  int cc = fileread(f, p, n);
+  
+  return cc;
 }
 
 uint64
@@ -482,5 +489,8 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  
+ // printf("fd0 %d\n", fd0);
+ // printf("fd1 %d\n", fd1);
   return 0;
 }

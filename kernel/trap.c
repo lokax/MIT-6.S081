@@ -32,6 +32,7 @@ trapinithart(void)
 int handlerFault(pagetable_t pagetable, uint64 va) {
   // 防止用户传递一个大地址
   // printf("handler fault\n");
+  va = PGROUNDDOWN(va);
   if(va >= MAXVA) {
     return -1;
   }
