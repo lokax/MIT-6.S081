@@ -16,6 +16,8 @@
 #include "file.h"
 #include "fcntl.h"
 
+static struct inode*
+create(char *path, short type, short major, short minor);
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -113,6 +115,37 @@ sys_fstat(void)
   if(argfd(0, 0, &f) < 0 || argaddr(1, &st) < 0)
     return -1;
   return filestat(f, st);
+}
+
+uint64 sys_symlink(void) {
+  char target[MAXPATH + 1], path[MAXPATH + 1];
+  struct inode *ip;
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0) 
+    return -1;
+
+  target[MAXPATH] = '\0';
+  begin_op();
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+    end_op();
+    return -1;
+  }
+
+  int len = strlen(target);
+  if(writei(ip, 0, (uint64)&len, 0, sizeof(len)) < sizeof(len)) {
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  if(writei(ip, 0, (uint64)target, sizeof(len), len) < len) {
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  iunlockput(ip);
+  end_op();
+  return 0; 
 }
 
 // Create the path new as a link to the same inode as old.
@@ -304,24 +337,70 @@ sys_open(void)
       return -1;
     }
   } else {
+    #if 0
     if((ip = namei(path)) == 0){
       end_op();
       return -1;
     }
-    ilock(ip);
-    if(ip->type == T_DIR && omode != O_RDONLY){
+    #endif
+
+    if(!(omode & O_NOFOLLOW)) {
+      int cnt = MXADEPTH;
+      int len;
+
+      while(cnt--) {
+        if((ip = namei(path)) == 0) {
+          end_op();
+          return -1;
+        }
+        ilock(ip);
+        if(ip->type == T_SYMLINK) {
+          if(readi(ip, 0, (uint64)&len, 0, sizeof(len)) < sizeof(len)) {
+            iunlockput(ip);
+            end_op(); // 事务结束
+            return -1;
+          }
+
+          if(readi(ip, 0, (uint64)path, sizeof(len), len) < len) {
+            iunlockput(ip);
+            end_op(); // 事务结束
+            return -1;
+          }
+          path[len] = '\0'; // new path
+          iunlockput(ip); // 解锁and释放
+        } else {
+          iunlock(ip); // 解锁但不需要释放
+          break;
+        }
+      }
+
+      if(cnt < 0) {
+        end_op();
+        return -1;
+      }
+    } else {
+      if((ip = namei(path)) == 0) {
+        end_op();
+        return -1;
+      }
+    }
+
+    ilock(ip); // 锁住
+    if(ip->type == T_DIR && omode != O_RDONLY){ // 打开目录
       iunlockput(ip);
       end_op();
       return -1;
     }
   }
 
+  // 设备号不对
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
     iunlockput(ip);
     end_op();
     return -1;
   }
 
+  // 分配file* 和 fd
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
@@ -330,6 +409,7 @@ sys_open(void)
     return -1;
   }
 
+  // 初始化file* 结构体字段
   if(ip->type == T_DEVICE){
     f->type = FD_DEVICE;
     f->major = ip->major;
@@ -341,6 +421,7 @@ sys_open(void)
   f->readable = !(omode & O_WRONLY);
   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
 
+  // trunc
   if((omode & O_TRUNC) && ip->type == T_FILE){
     itrunc(ip);
   }
