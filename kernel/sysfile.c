@@ -52,6 +52,96 @@ fdalloc(struct file *f)
   return -1;
 }
 
+
+// void *mmap(void *addr, size_t length, int prot, int flags,
+//            int fd, off_t offset);
+uint64 
+sys_mmap(void) {
+  int len, prot, flags, fd;
+  struct file* f;
+  if(argint(1, &len) < 0 || argint(2, &prot) < 0 || argint(3, &flags) || 
+    argfd(4, &fd, &f) < 0) {
+    return -1;
+  }
+  if(!f->writable && (prot & PROT_READ) && (flags & MAP_SHARED)) {
+    return -1;
+  }
+
+
+  struct proc* p = myproc();
+  struct vma* vm;
+  for(vm = p->vmas; vm < p->vmas + 16; vm++) {
+    if(vm->used == 0) {
+      vm->used = 1;
+      vm->prot = prot;
+      vm->flags = flags;
+      vm->f = f;
+      vm->len = len;
+      vm->addr = PGROUNDDOWN(p->mmap_begin - len); // 4096 - 2 == 4094 -- 4094 4095
+      vm->end = vm->addr + len; // len不包括
+      p->mmap_begin = vm->addr;
+      filedup(f);
+      break;
+    }
+  }
+  if(vm == p->vmas + 16) return -1;
+  return vm->addr;
+}
+
+uint64 
+sys_munmap(void) {
+  uint64 addr;
+  int len;
+  if(argaddr(0, &addr) < 0 || argint(1, &len) < 0) {
+    return -1;
+  }
+
+  struct proc* p = myproc();
+  struct vma* vm;
+  for(vm = p->vmas; vm < p->vmas + 16; vm++) {
+    if(vm->addr <= addr && addr <= vm->end) {
+      break;
+    }
+  }
+  if(vm == p->vmas + 16) return -1;
+  if(vm->len < len) {
+    len = vm->len;
+  }
+
+
+  // addr -- 1  len -- 6  vm->len = 12   vm->end = 12 vm->addr = 0  pgsize = 4  
+  uint64 va = PGROUNDDOWN(addr); // 向下对齐  // 0
+  uint64 va_last = PGROUNDDOWN(addr + len); // 4  [va, va_last] 为需要释放的区间
+  int npages = ((va_last - va) / PGSIZE) + 1; // (4 - 0) / 4  + 1 = 2 
+  uint offset = va - vm->addr;
+  
+
+  if(vm->flags == MAP_SHARED && (vm->prot & PROT_WRITE) && (vm->f->writable)) {
+    ilock(vm->f->ip);
+    writei(vm->f->ip, 1, va, offset, npages * PGSIZE); 
+    iunlock(vm->f->ip);
+  }
+  // ilock(vm->f->ip);
+  // readi(vm->f->ip, 1, va, )
+  
+  uvmunmap(p->pagetable, va, npages, 1); // 释放从[0..4] [4 ..8]
+  
+  vm->len -= (npages * PGSIZE); // vm->len = 4
+  if(va == vm->addr) {
+    vm->addr += (npages * PGSIZE); // 0 + 2 * 4 = 8
+  } else {
+    panic("unmmap error!");
+  }
+  if(vm->addr == vm->end) {
+    // 释放
+    fileclose(vm->f); // 先释放
+    vm->used = 0;
+    vm->f = 0;
+  }
+
+  return 0;
+}
+
 uint64
 sys_dup(void)
 {

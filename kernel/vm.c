@@ -21,7 +21,7 @@ kvmmake(void)
 {
   pagetable_t kpgtbl;
 
-  kpgtbl = (pagetable_t) kalloc();
+  kpgtbl = (pagetable_t) kalloc(); // 分配了一个物理页内存，存放kernel page table
   memset(kpgtbl, 0, PGSIZE);
 
   // uart registers
@@ -61,8 +61,8 @@ kvminit(void)
 void
 kvminithart()
 {
-  w_satp(MAKE_SATP(kernel_pagetable));
-  sfence_vma();
+  w_satp(MAKE_SATP(kernel_pagetable)); // 写进寄存器
+  sfence_vma(); // 刷新块表
 }
 
 // Return the address of the PTE in page table pagetable
@@ -80,13 +80,13 @@ kvminithart()
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
-  if(va >= MAXVA)
+  if(va >= MAXVA) // 超出最大地址空间，则panic
     panic("walk");
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
     if(*pte & PTE_V) {
-      pagetable = (pagetable_t)PTE2PA(*pte);
+      pagetable = (pagetable_t)PTE2PA(*pte); // 转为物理地址
     } else {
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
         return 0;

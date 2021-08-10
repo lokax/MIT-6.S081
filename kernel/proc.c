@@ -33,8 +33,8 @@ proc_mapstacks(pagetable_t kpgtbl) {
     char *pa = kalloc();
     if(pa == 0)
       panic("kalloc");
-    uint64 va = KSTACK((int) (p - proc));
-    kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+    uint64 va = KSTACK((int) (p - proc)); // 一开始就初始化了NPROC个内核栈
+    kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W); // 栈是可读可写的
   }
 }
 
@@ -133,7 +133,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
+  p->mmap_begin = PGROUNDDOWN(MAXVA - (PGSIZE * 2)); // 初始化mmap_begin // TODO:
   return p;
 }
 
