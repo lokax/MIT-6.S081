@@ -284,6 +284,24 @@ fork(void)
 
   np->parent = p;
 
+  // my code
+  #if 1
+  np->mmap_begin = p->mmap_begin;
+  for(int i = 0; i < 16; i++) {
+    np->vmas[i].addr = p->vmas[i].addr;
+    np->vmas[i].end = p->vmas[i].end;
+    np->vmas[i].f = p->vmas[i].f;
+    np->vmas[i].flags = p->vmas[i].flags;
+    np->vmas[i].len = p->vmas[i].len;
+    np->vmas[i].prot = p->vmas[i].prot;
+    np->vmas[i].used = p->vmas[i].used;
+    if(p->vmas[i].used && p->vmas[i].f) {
+      filedup(np->vmas[i].f);
+    }
+  }
+  #endif
+  //
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -341,11 +359,23 @@ exit(int status)
 {
   struct proc *p = myproc();
 
-  if(p == initproc)
+  if(p == initproc) // init进程不能退出
     panic("init exiting");
 
+   // mycode
+  #if 1 // TODO:
+  struct vma* vm;
+  for(vm  = p->vmas; vm < p->vmas + 16; vm++) {
+    if(vm->used) {
+      if(munmmap_s(vm->addr, vm->len) < 0) {
+        panic("munmap_s error!");
+      }
+    }
+  }
+  #endif
+
   // Close all open files.
-  for(int fd = 0; fd < NOFILE; fd++){
+  for(int fd = 0; fd < NOFILE; fd++){ // 遍历打开文件表，关闭所有文件
     if(p->ofile[fd]){
       struct file *f = p->ofile[fd];
       fileclose(f);
@@ -354,7 +384,7 @@ exit(int status)
   }
 
   begin_op();
-  iput(p->cwd);
+  iput(p->cwd); // 释放对当前目录的引用
   end_op();
   p->cwd = 0;
 
@@ -379,24 +409,25 @@ exit(int status)
   
   // we need the parent's lock in order to wake it up from wait().
   // the parent-then-child rule says we have to lock it first.
-  acquire(&original_parent->lock);
+  acquire(&original_parent->lock); // 调整锁的顺序
 
-  acquire(&p->lock);
+  acquire(&p->lock); // 锁要到调度器线程去释放
 
   // Give any children to init.
-  reparent(p);
+  reparent(p); // 把当前进程的子进程交给init
 
   // Parent might be sleeping in wait().
-  wakeup1(original_parent);
+  wakeup1(original_parent); // 唤醒父进程
 
-  p->xstate = status;
-  p->state = ZOMBIE;
+  p->xstate = status; // 退出状态
+  p->state = ZOMBIE; // 僵尸进程
 
-  release(&original_parent->lock);
+  release(&original_parent->lock); // 释放父进程的锁
+
 
   // Jump into the scheduler, never to return.
-  sched();
-  panic("zombie exit");
+  sched(); // 调度
+  panic("zombie exit"); // sched不应该返回
 }
 
 // Wait for a child process to exit and return its pid.

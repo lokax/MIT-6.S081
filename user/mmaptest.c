@@ -116,7 +116,6 @@ mmap_test(void)
   _v1(p);
   if (munmap(p, PGSIZE*2) == -1)
     err("munmap (1)");
-
   printf("test mmap f: OK\n");
     
   printf("test mmap private\n");
@@ -258,13 +257,15 @@ fork_test(void)
   
   // mmap the file twice.
   makefile(f);
-  if ((fd = open(f, O_RDONLY)) == -1)
+  if ((fd = open(f, O_RDONLY)) == -1) // 只读文件
     err("open");
   unlink(f);
-  char *p1 = mmap(0, PGSIZE*2, PROT_READ, MAP_SHARED, fd, 0);
+  char *p1 = mmap(0, PGSIZE*2, PROT_READ, MAP_SHARED, fd, 0); // PROT_READ 权限
+  printf("p1 = %p\n", p1);
   if (p1 == MAP_FAILED)
     err("mmap (4)");
   char *p2 = mmap(0, PGSIZE*2, PROT_READ, MAP_SHARED, fd, 0);
+  printf("p2 = %p\n", p2);
   if (p2 == MAP_FAILED)
     err("mmap (5)");
 
@@ -274,16 +275,17 @@ fork_test(void)
 
   if((pid = fork()) < 0)
     err("fork");
-  if (pid == 0) {
+  if (pid == 0) { // 儿子进程
     _v1(p1);
     munmap(p1, PGSIZE); // just the first page
-    exit(0); // tell the parent that the mapping looks OK.
+    exit(0); // tell the parent that the mapping looks OK.  
   }
-
+  // 父进程
   int status = -1;
   wait(&status);
 
   if(status != 0){
+    printf("fuck error\n");
     printf("fork_test failed\n");
     exit(1);
   }

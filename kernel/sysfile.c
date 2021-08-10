@@ -63,9 +63,17 @@ sys_mmap(void) {
     argfd(4, &fd, &f) < 0) {
     return -1;
   }
-  if(!f->writable && (prot & PROT_READ) && (flags & MAP_SHARED)) {
+
+  if((prot & PROT_READ) && !f->readable) {
     return -1;
   }
+
+  // 当MAP_PRIVATE时，即使文件不可写，也是依然可以写内存的，应该不会把数据写回磁盘上。
+  if(!f->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED)) {
+    return -1;
+  }
+
+
 
 
   struct proc* p = myproc();
@@ -88,18 +96,11 @@ sys_mmap(void) {
   return vm->addr;
 }
 
-uint64 
-sys_munmap(void) {
-  uint64 addr;
-  int len;
-  if(argaddr(0, &addr) < 0 || argint(1, &len) < 0) {
-    return -1;
-  }
-
+uint64 munmmap_s(uint64 addr, int len) {
   struct proc* p = myproc();
   struct vma* vm;
   for(vm = p->vmas; vm < p->vmas + 16; vm++) {
-    if(vm->addr <= addr && addr <= vm->end) {
+    if(vm->addr <= addr && addr < vm->end) {
       break;
     }
   }
@@ -108,22 +109,29 @@ sys_munmap(void) {
     len = vm->len;
   }
 
-
+  // printf("munmap begin\n");
   // addr -- 1  len -- 6  vm->len = 12   vm->end = 12 vm->addr = 0  pgsize = 4  
   uint64 va = PGROUNDDOWN(addr); // 向下对齐  // 0
-  uint64 va_last = PGROUNDDOWN(addr + len); // 4  [va, va_last] 为需要释放的区间
-  int npages = ((va_last - va) / PGSIZE) + 1; // (4 - 0) / 4  + 1 = 2 
+  uint64 va_last = PGROUNDUP(addr + len); // 4  [va, va_last) 为需要释放的区间
+  int npages = ((va_last - va) / PGSIZE); // (4 - 0) / 4  + 1 = 2 
   uint offset = va - vm->addr;
   
+  #if 0
+  printf("va = %p, addr = %p\n", va, addr);
+  printf("va_last = %p\n", va_last);
+  printf("npages = %d\n", npages);
+  #endif
 
   if(vm->flags == MAP_SHARED && (vm->prot & PROT_WRITE) && (vm->f->writable)) {
+    begin_op();
     ilock(vm->f->ip);
     writei(vm->f->ip, 1, va, offset, npages * PGSIZE); 
     iunlock(vm->f->ip);
+    end_op();
   }
   // ilock(vm->f->ip);
   // readi(vm->f->ip, 1, va, )
-  
+
   uvmunmap(p->pagetable, va, npages, 1); // 释放从[0..4] [4 ..8]
   
   vm->len -= (npages * PGSIZE); // vm->len = 4
@@ -138,8 +146,18 @@ sys_munmap(void) {
     vm->used = 0;
     vm->f = 0;
   }
-
+  // printf("munmap_s\n");
   return 0;
+}
+
+uint64 
+sys_munmap(void) {
+  uint64 addr;
+  int len;
+  if(argaddr(0, &addr) < 0 || argint(1, &len) < 0) {
+    return -1;
+  }
+  return munmmap_s(addr, len);
 }
 
 uint64

@@ -9,6 +9,9 @@ struct sleeplock;
 struct stat;
 struct superblock;
 
+// sysfile.c
+uint64 munmmap_s(uint64 , int );
+
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);

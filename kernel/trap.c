@@ -3,6 +3,9 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "file.h"
 #include "proc.h"
 #include "defs.h"
 
@@ -65,6 +68,61 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 15 || r_scause() == 13) {
+    uint64 va = r_stval();
+    uint64 pa;
+    if(va < MAXVA) {
+      // printf("hellp trap\n");
+      if((pa = (uint64)kalloc()) == 0) {
+        p->killed = 1;
+      } else {
+        memset((void*)pa, 0, PGSIZE);
+
+        struct vma* vm;
+        for(vm = p->vmas; vm < p->vmas + 16; vm++) {
+          if(va >= vm->addr && va < vm->end) {
+            break;
+          }
+        }
+
+        if(vm == p->vmas + 16) {
+          kfree((void*)pa);
+          p->killed = 1;
+          goto lab_a;
+        }
+        #if 0
+        #define PROT_NONE       0x0
+        #define PROT_READ       0x1 // PTE_R = 0x2 
+        #define PROT_WRITE      0x2 // PTE_W = 0x4
+        #define PROT_EXEC       0x4 // PTE_X = 0x8
+        #endif
+        #if 0
+        printf("va = %p\n", va);
+        if((vm->prot & 0x4)) {
+          printf("exec proc\n");
+        }
+        #endif
+        if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, pa, PTE_U | (vm->prot << 1))) {
+          printf("mmapage error!");
+          kfree((void*)pa);
+          p->killed = 1;
+          goto lab_a;
+        }
+
+        ilock(vm->f->ip);
+        // 有时候不一定能读到整个PGSIZE，应该允许这种情况的存在
+        if(readi(vm->f->ip, 0, pa, PGROUNDDOWN(va) - vm->addr, PGSIZE) < 0) {
+          printf("readi error!");
+          p->killed = 1;
+        }
+        iunlock(vm->f->ip);
+      }   
+    } else {
+      printf("fuck trap!");
+      p->killed = 1;
+    }
+
+
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -72,13 +130,13 @@ usertrap(void)
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
-
+  lab_a:
   if(p->killed)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
-    yield();
+    yield(); // 让出cpu
 
   usertrapret();
 }
